@@ -8,6 +8,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <script type="importmap">
+    {
+      "imports": {
+        "@google/genai": "https://esm.run/@google/genai"
+      }
+    }
+    </script>
     <script type="module" src="index.tsx"></script>
   <link rel="stylesheet" href="/index.css">
 </head>
@@ -33,8 +40,10 @@
         <p class="placeholder">Click the button to find your next haunt.</p>
       </section>
 
+      <section id="sources-container" aria-live="polite"></section>
+
       <footer>
-        <p>AI-Powered Recommendations</p>
+        <p>Powered by Gemini</p>
       </footer>
     </main>
   <script type="module" src="/index.tsx"></script>

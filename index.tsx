@@ -3,7 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// Define the structure for a bar object, which matches the webhook's expected output.
+import { GoogleGenAI } from "@google/genai";
+
+// Define the structure for a bar object.
 interface Bar {
   name: string;
   vibe_tags: string[];
@@ -12,19 +14,36 @@ interface Bar {
   opening_hours: string;
 }
 
+// Define the structure for a grounding source.
+interface Source {
+    uri: string;
+    title: string;
+}
+
 // Main function to run the application logic
 async function main() {
   // Get references to DOM elements
   const findBarsBtn = document.getElementById('find-bars-btn') as HTMLButtonElement;
   const resultsContainer = document.getElementById('results-container') as HTMLElement;
+  const sourcesContainer = document.getElementById('sources-container') as HTMLElement;
   const loader = document.getElementById('loader') as HTMLElement;
-  const webhookUrl = 'https://hook.eu2.make.com/pen72d2cqfpjn1emeghr4rk9cheudezz';
+  
+  // This should be set in your environment variables for security.
+  const API_KEY = process.env.API_KEY;
+
+  if (!API_KEY) {
+      renderError("API key is not configured. Please ensure it's set up correctly.");
+      return;
+  }
+
+  const ai = new GoogleGenAI({ apiKey: API_KEY });
 
   // Add click event listener to the main button
   findBarsBtn.addEventListener('click', async () => {
     // 1. Show loader and clear previous results
     loader.style.display = 'block';
     resultsContainer.innerHTML = '';
+    sourcesContainer.innerHTML = '';
 
     try {
       // 2. Get user's current location
@@ -37,24 +56,48 @@ async function main() {
 
       const { latitude, longitude } = position.coords;
 
-      // 3. Call the Make.com webhook with the user's location
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      // 3. Define the prompt for the Gemini API with search grounding
+      const prompt = `You are an expert local guide API. Your primary function is to find REAL, CURRENTLY OPERATING alternative bars (punk, goth, metal, dive bars) near latitude ${latitude} and longitude ${longitude}.
+
+You MUST use your search tool to verify that each bar exists and is not permanently closed. Prioritize accuracy and real-world data.
+
+Based on your search results, return a raw JSON code block containing a single object with a "bars" key, which is an array of up to 8 bar objects. The JSON object must strictly follow this structure:
+{
+  "bars": [
+    {
+      "name": "string",
+      "vibe_tags": ["string", "string"],
+      "address": "string",
+      "rating": "number or null",
+      "opening_hours": "string"
+    }
+  ]
+}
+Do NOT include any introductory or concluding text outside of the JSON block.`;
+
+      // 4. Call the Gemini API with Google Search enabled
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          tools: [{googleSearch: {}}],
         },
-        body: JSON.stringify({ latitude, longitude }),
       });
-
-      if (!response.ok) {
-        throw new Error(`Webhook request failed with status ${response.status}.`);
+      
+      const textResponse = response.text;
+      const jsonMatch = textResponse.match(/```json\n([\s\S]*?)\n```/);
+      
+      if (!jsonMatch || !jsonMatch[1]) {
+        throw new Error("Could not find a valid JSON block in the AI response. The model may have failed to find results.");
       }
-
-      // 4. Parse the JSON response from the webhook
-      const bars: Bar[] = await response.json();
-
-      // 5. Render the results
-      renderResults(bars);
+      
+      const parsedResponse = JSON.parse(jsonMatch[1]);
+      
+      // 5. Render the results and sources
+      renderResults(parsedResponse.bars || []);
+      
+      const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(chunk => chunk.web).filter(Boolean) as Source[] || [];
+      renderSources(sources);
 
     } catch (error) {
       // Handle any errors that occur during the process
@@ -75,12 +118,7 @@ async function main() {
       } else if (error instanceof SyntaxError) {
         errorMessage = 'Failed to read the list of bars. The format from the server was unexpected.';
       } else if (error instanceof Error) {
-        // Use a more generic message for webhook failures
-        if (error.message.includes('Webhook request failed')) {
-             errorMessage = 'Could not fetch data from the server. Please try again later.';
-        } else {
-             errorMessage = error.message;
-        }
+        errorMessage = `Could not fetch data from the AI. ${error.message}`;
       }
       renderError(errorMessage);
     } finally {
@@ -123,7 +161,6 @@ async function main() {
       const li = document.createElement('li');
       li.className = 'bar-item';
       
-      // Prepare values for display, preventing errors
       const displayName = safeDisplay(bar.name);
       const displayAddress = safeDisplay(bar.address);
       const displayHours = safeDisplay(bar.opening_hours);
@@ -133,7 +170,6 @@ async function main() {
         ? bar.vibe_tags.map(tag => `<li class="vibe-tag">${safeDisplay(tag)}</li>`).join('')
         : '';
       
-      // Prepare values for the map link, ensuring they are strings
       const mapsName = typeof bar.name === 'string' ? bar.name : '';
       const mapsAddress = typeof bar.address === 'string' ? bar.address : '';
       const encodedAddress = encodeURIComponent(`${mapsName} ${mapsAddress}`);
@@ -158,6 +194,34 @@ async function main() {
     });
 
     resultsContainer.appendChild(ul);
+  }
+  
+  /**
+   * Renders the list of sources in the sources container.
+   * @param sources - An array of Source objects.
+   */
+  function renderSources(sources: Source[]): void {
+      sourcesContainer.innerHTML = ''; // Clear previous content
+      if (!sources || sources.length === 0) {
+          return;
+      }
+
+      const title = document.createElement('h3');
+      title.textContent = 'Data Sources';
+      sourcesContainer.appendChild(title);
+
+      const ul = document.createElement('ul');
+      ul.className = 'sources-list';
+
+      sources.forEach(source => {
+          if (source.uri && source.title) {
+              const li = document.createElement('li');
+              li.className = 'source-item';
+              li.innerHTML = `<a href="${source.uri}" target="_blank" rel="noopener noreferrer">${source.title}</a>`;
+              ul.appendChild(li);
+          }
+      });
+      sourcesContainer.appendChild(ul);
   }
 
   /**
