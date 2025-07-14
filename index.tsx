@@ -96,28 +96,32 @@ async function main() {
       const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
       
       const updateUIForPermission = (state: PermissionState) => {
+        const btnSpan = findBarsBtn.querySelector('span');
+        
         if (state === 'denied') {
           findBarsBtn.disabled = true;
+          if (btnSpan) btnSpan.textContent = 'LOCATION BLOCKED';
           permissionStatusEl.style.display = 'block';
-          permissionStatusEl.innerHTML = 'Location access is blocked. Please enable it in your browser settings.';
-          // Clear the main placeholder since the permission error is more important
+          permissionStatusEl.innerHTML = 'Location access is blocked. You must enable it in your browser\'s site settings to continue.';
           resultsContainer.innerHTML = ''; 
         } else { // 'granted' or 'prompt'
           findBarsBtn.disabled = false;
+          if (btnSpan) btnSpan.textContent = 'Find Dives Near Me';
           permissionStatusEl.style.display = 'none';
           permissionStatusEl.innerHTML = '';
-          // Restore placeholder only if there are no results or errors displayed
           if (resultsContainer.innerHTML.trim() === '') {
             resultsContainer.innerHTML = `<p class="placeholder">Click the button to find your next haunt.</p>`;
           }
         }
       };
 
+      console.log(`Initial geolocation permission state: ${permissionStatus.state}`);
       // Set initial UI based on permission state
       updateUIForPermission(permissionStatus.state);
 
       // Listen for any changes in the permission state
       permissionStatus.onchange = () => {
+        console.log(`Geolocation permission state changed to: ${permissionStatus.state}`);
         updateUIForPermission(permissionStatus.state);
       };
 
@@ -128,6 +132,7 @@ async function main() {
 
   // Add click event listener to the main button
   findBarsBtn.addEventListener('click', async () => {
+    console.log("Button clicked, attempting to get geolocation...");
     // 1. Show loader and clear previous results
     loader.style.display = 'block';
     resultsContainer.innerHTML = '';
@@ -142,9 +147,11 @@ async function main() {
       });
 
       const { latitude, longitude } = position.coords;
+      console.log(`Location acquired: ${latitude}, ${longitude}`);
 
       // 3. Call the Make.com webhook to get bar recommendations
       const webhookUrl = 'https://hook.eu2.make.com/pen72d2cqfpjn1emeghr4rk9cheudezz';
+      console.log(`Sending request to webhook: ${webhookUrl}`);
       
       const response = await fetch(webhookUrl, {
         method: 'POST',
@@ -173,6 +180,7 @@ async function main() {
           throw new Error('Invalid data format received from webhook.');
       }
 
+      console.log(`Received ${data.bars.length} bars from webhook.`);
       // 4. Display the results
       displayResults(data.bars);
 
