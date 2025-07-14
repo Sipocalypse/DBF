@@ -3,58 +3,28 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { GoogleGenAI, Type } from "@google/genai";
-
-// Define the structure for a bar object, now with an array for vibe_tags.
+// Define the structure for a bar object, which matches the webhook's expected output.
 interface Bar {
   name: string;
   vibe_tags: string[];
   address: string;
-  rating: number;
+  rating: number | null;
   opening_hours: string;
 }
 
 // Main function to run the application logic
 async function main() {
-  // Ensure API key is available
-  if (!process.env.API_KEY) {
-    throw new Error("API_KEY environment variable not set");
-  }
-
-  // Initialize the GoogleGenAI client with the API key.
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
   // Get references to DOM elements
   const findBarsBtn = document.getElementById('find-bars-btn') as HTMLButtonElement;
   const resultsContainer = document.getElementById('results-container') as HTMLElement;
   const loader = document.getElementById('loader') as HTMLElement;
+  const webhookUrl = 'https://hook.eu2.make.com/pen72d2cqfpjn1emeghr4rk9cheudezz';
 
-  // Define the expected JSON schema, asking for vibe_tags as an array.
-  const responseSchema = {
-    type: Type.ARRAY,
-    items: {
-      type: Type.OBJECT,
-      properties: {
-        name: { type: Type.STRING, description: 'Name of the bar.' },
-        vibe_tags: {
-          type: Type.ARRAY,
-          description: 'A list of 1 to 3 tags describing the bar\'s atmosphere or music style (e.g., "Goth", "Metal", "Dive Bar", "Punk", "Live Music").',
-          items: { type: Type.STRING }
-        },
-        address: { type: Type.STRING, description: 'The full street address of the bar.' },
-        rating: { type: Type.NUMBER, description: 'The user rating of the bar, out of 5. For example, 4.5.' },
-        opening_hours: { type: Type.STRING, description: 'The typical opening hours for the bar (e.g., "5PM - 2AM", "Closed Mondays"). Return "Hours not available" if unknown.' }
-      },
-      required: ['name', 'vibe_tags', 'address', 'rating', 'opening_hours'],
-    },
-  };
-  
   // Add click event listener to the main button
   findBarsBtn.addEventListener('click', async () => {
     // 1. Show loader and clear previous results
     loader.style.display = 'block';
     resultsContainer.innerHTML = '';
-    let responseText = '';
 
     try {
       // 2. Get user's current location
@@ -62,33 +32,28 @@ async function main() {
         if (!navigator.geolocation) {
           reject(new Error('Geolocation is not supported by your browser.'));
         }
-        navigator.geolocation.getCurrentPosition(resolve, reject);
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
       });
 
       const { latitude, longitude } = position.coords;
 
-      // 3. Construct the prompt for the Gemini API, asking for vibe tags.
-      const prompt = `Find the top 10 nearest alternative bars (punk, goth, metal, dive bars) to latitude ${latitude} and longitude ${longitude}. I am looking for places with a dark, alternative, or grungy aesthetic. For each bar, provide its name, a list of 1 to 3 vibe tags, its full address, its user rating out of 5, and its opening hours.`;
-
-      // 4. Call the Gemini API to get bar recommendations
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: responseSchema,
+      // 3. Call the Make.com webhook with the user's location
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ latitude, longitude }),
       });
 
-      // 5. Parse the JSON response robustly
-      responseText = response.text;
-      let jsonString = responseText.trim();
-      if (jsonString.startsWith('```json')) {
-          jsonString = jsonString.substring(7, jsonString.length - 3).trim();
+      if (!response.ok) {
+        throw new Error(`Webhook request failed with status ${response.status}.`);
       }
-      const bars: Bar[] = JSON.parse(jsonString);
 
-      // 6. Render the results
+      // 4. Parse the JSON response from the webhook
+      const bars: Bar[] = await response.json();
+
+      // 5. Render the results
       renderResults(bars);
 
     } catch (error) {
@@ -96,7 +61,7 @@ async function main() {
       console.error(error);
       let errorMessage = 'An unexpected error occurred. Please try again.';
       if (error instanceof GeolocationPositionError) {
-        switch(error.code) {
+        switch (error.code) {
           case error.PERMISSION_DENIED:
             errorMessage = 'Location permission denied. Please enable it in your browser settings to find nearby bars.';
             break;
@@ -108,14 +73,18 @@ async function main() {
             break;
         }
       } else if (error instanceof SyntaxError) {
-        errorMessage = 'Failed to read the list of bars from the AI. The format was unexpected. Please try again.';
-        console.error("Raw response text:", responseText);
+        errorMessage = 'Failed to read the list of bars. The format from the server was unexpected.';
       } else if (error instanceof Error) {
-        errorMessage = error.message;
+        // Use a more generic message for webhook failures
+        if (error.message.includes('Webhook request failed')) {
+             errorMessage = 'Could not fetch data from the server. Please try again later.';
+        } else {
+             errorMessage = error.message;
+        }
       }
       renderError(errorMessage);
     } finally {
-      // 7. Hide the loader regardless of success or failure
+      // 6. Hide the loader regardless of success or failure
       loader.style.display = 'none';
     }
   });
@@ -123,14 +92,13 @@ async function main() {
   /**
    * Safely converts a value to a string for display. Prevents [object Object].
    * @param value - The value to convert.
-   * @returns A string representation of the value.
+   * @returns A string representation of the value or a fallback.
    */
   function safeDisplay(value: any): string {
     if (value === null || value === undefined || value === '') {
       return 'N/A';
     }
-    // If the API returns an object instead of a string, this prevents the error.
-    if (typeof value === 'object') {
+    if (typeof value === 'object' && !Array.isArray(value)) {
       return 'Info unavailable';
     }
     return String(value);
@@ -155,24 +123,28 @@ async function main() {
       const li = document.createElement('li');
       li.className = 'bar-item';
       
-      // Defensively handle address for the map link
-      const addressString = typeof bar.address === 'string' ? bar.address : '';
-      const encodedAddress = encodeURIComponent(`${bar.name}, ${addressString}`);
-      const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
-      
-      const vibeTagsHtml = bar.vibe_tags && Array.isArray(bar.vibe_tags)
-        ? bar.vibe_tags.map(tag => `<li class="vibe-tag">${tag}</li>`).join('')
-        : '';
-        
-      const displayHours = safeDisplay(bar.opening_hours);
+      // Prepare values for display, preventing errors
+      const displayName = safeDisplay(bar.name);
       const displayAddress = safeDisplay(bar.address);
+      const displayHours = safeDisplay(bar.opening_hours);
+      const displayRating = bar.rating ? Number(bar.rating).toFixed(1) : 'N/A';
+      
+      const vibeTagsHtml = Array.isArray(bar.vibe_tags)
+        ? bar.vibe_tags.map(tag => `<li class="vibe-tag">${safeDisplay(tag)}</li>`).join('')
+        : '';
+      
+      // Prepare values for the map link, ensuring they are strings
+      const mapsName = typeof bar.name === 'string' ? bar.name : '';
+      const mapsAddress = typeof bar.address === 'string' ? bar.address : '';
+      const encodedAddress = encodeURIComponent(`${mapsName} ${mapsAddress}`);
+      const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodedAddress}`;
 
       li.innerHTML = `
         <div class="bar-item-content">
-            <h2>${bar.name}</h2>
+            <h2>${displayName}</h2>
             <ul class="vibe-tags">${vibeTagsHtml}</ul>
             <div class="bar-details">
-                <span class="rating" title="Rating">★ ${bar.rating ? bar.rating.toFixed(1) : 'N/A'}</span>
+                <span class="rating" title="Rating">★ ${displayRating}</span>
                 <span class="hours" title="Opening Hours">🕒 ${displayHours}</span>
             </div>
             <p class="address">${displayAddress}</p>
