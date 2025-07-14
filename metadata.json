@@ -1,0 +1,7 @@
+{
+  "name": "Dark Dive Finder",
+  "description": "Finds the nearest alternative, punk, goth, metal, and dive bars to you.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
