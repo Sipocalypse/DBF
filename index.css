@@ -70,6 +70,9 @@ body {
 .controls {
   display: flex;
   justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
 }
 
 #find-bars-btn {
@@ -86,6 +89,9 @@ body {
   gap: 0.5rem;
   letter-spacing: 1.5px;
   text-transform: uppercase;
+  width: 100%;
+  max-width: 350px;
+  justify-content: center;
 }
 
 #find-bars-btn img {
@@ -102,6 +108,32 @@ body {
 
 #find-bars-btn:active {
   transform: scale(0.98);
+}
+
+#find-bars-btn:disabled {
+  background-color: #555;
+  border-color: #444;
+  color: #999;
+  cursor: not-allowed;
+  box-shadow: none;
+  filter: grayscale(80%);
+}
+
+#find-bars-btn:disabled:hover {
+  background-color: #555;
+  border-color: #444;
+  box-shadow: none;
+}
+
+#permission-status {
+  text-align: center;
+  color: var(--color-secondary);
+  font-weight: bold;
+  padding: 1rem;
+  background-color: rgba(229, 9, 20, 0.1);
+  border: 1px solid var(--color-primary);
+  border-radius: 8px;
+  display: none;
 }
 
 #results-container {

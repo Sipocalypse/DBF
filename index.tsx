@@ -18,6 +18,7 @@ async function main() {
   const findBarsBtn = document.getElementById('find-bars-btn') as HTMLButtonElement;
   const resultsContainer = document.getElementById('results-container') as HTMLElement;
   const loader = document.getElementById('loader') as HTMLElement;
+  const permissionStatusEl = document.getElementById('permission-status') as HTMLElement;
 
   const displayResults = (bars: Bar[]) => {
     resultsContainer.innerHTML = ''; // Clear any existing content (like placeholder)
@@ -70,7 +71,7 @@ async function main() {
     console.error('Error finding bars:', error);
     let message = 'An unknown error occurred. Please try again.';
     if (error.message.includes('User denied Geolocation')) {
-        message = 'Location access is required to find nearby bars. Please enable it and try again.';
+        message = 'Location access was denied. Please enable it in your browser settings and try again.';
     } else if (error.message.includes('timeout')) {
         message = 'Could not get your location in time. Please check your connection and try again.';
     } else if (error.message.includes('Geolocation is not supported')) {
@@ -82,6 +83,47 @@ async function main() {
     }
     
     resultsContainer.innerHTML = `<p class="error-message">${message}</p>`;
+  };
+
+  // Function to handle location permission state
+  const handlePermission = async () => {
+    // Check if the Permissions API is supported.
+    if (!navigator.permissions) {
+      console.warn("Permissions API not supported; cannot pre-check geolocation status.");
+      return;
+    }
+    try {
+      const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
+      
+      const updateUIForPermission = (state: PermissionState) => {
+        if (state === 'denied') {
+          findBarsBtn.disabled = true;
+          permissionStatusEl.style.display = 'block';
+          permissionStatusEl.innerHTML = 'Location access is blocked. Please enable it in your browser settings.';
+          // Clear the main placeholder since the permission error is more important
+          resultsContainer.innerHTML = ''; 
+        } else { // 'granted' or 'prompt'
+          findBarsBtn.disabled = false;
+          permissionStatusEl.style.display = 'none';
+          permissionStatusEl.innerHTML = '';
+          // Restore placeholder only if there are no results or errors displayed
+          if (resultsContainer.innerHTML.trim() === '') {
+            resultsContainer.innerHTML = `<p class="placeholder">Click the button to find your next haunt.</p>`;
+          }
+        }
+      };
+
+      // Set initial UI based on permission state
+      updateUIForPermission(permissionStatus.state);
+
+      // Listen for any changes in the permission state
+      permissionStatus.onchange = () => {
+        updateUIForPermission(permissionStatus.state);
+      };
+
+    } catch (e) {
+      console.error("Could not query location permission state.", e);
+    }
   };
 
   // Add click event listener to the main button
@@ -142,6 +184,9 @@ async function main() {
       loader.style.display = 'none';
     }
   });
+
+  // Check permissions when the app loads
+  handlePermission();
 }
 
 // Run the main function when the script loads
