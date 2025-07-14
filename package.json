@@ -1,5 +1,5 @@
 {
-  "name": "dark-dive-finder",
+  "name": "dark-dive-finder---gpt",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/genai": "latest"
+    "@google/genai": "^1.9.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
